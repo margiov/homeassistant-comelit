@@ -84,9 +84,24 @@ class ComelitVedo:
         response.raise_for_status()
         text = response.content.decode("iso-8859-1").encode("utf-8")
         if is_response:
-            payload = json.loads(text)
-            return payload
+            return self._parse_response(text)
         return text
+
+    # Parse a JSON response, detecting the panel's "not logged in" replies.
+    # When the session is invalid the panel still answers with HTTP 200, but
+    # the body either fails to parse (it contains unquoted/unterminated
+    # "Not logged" placeholders) or parses fine with a negative "logged"
+    # field. Both cases are reported as a CookieException so callers force a
+    # fresh login instead of failing on a confusing JSON parsing error.
+    @staticmethod
+    def _parse_response(text):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise CookieException("invalid session (unparsable response)") from e
+        if payload.get("logged", 1) <= 0:
+            raise CookieException(f"invalid session (logged={payload.get('logged')})")
+        return payload
 
     # Do the POST to the vedo IP
     @timeout(DEFAULT_TIMEOUT, use_signals=True)
@@ -103,15 +118,28 @@ class ComelitVedo:
         params = {"code": self.password}
         response = self.post(url, params, headers)
         response.raise_for_status()
-        if response.status_code == 200:
-            uid = response.headers.get("set-cookie")
-            if uid is not None:
-                _LOGGER.debug("Logged in, %s", response.text)
-                return uid
+        if response.status_code != 200:
+            _LOGGER.error("Bad login response! - %s", response.text)
+            return None
+
+        uid = response.headers.get("set-cookie")
+        if uid is None:
             _LOGGER.warning("Error doing the login %s", response.text)
             raise Exception("Unable to obtain the cookie")
-        _LOGGER.error("Bad login response! - %s", response.text)
-        return None
+
+        # The panel always replies 200 with a cookie, even when the password
+        # is wrong: the only reliable sign of a rejected login shows up in
+        # the body of a subsequent request. Check it here so a bad password
+        # fails loudly and immediately instead of silently later on.
+        try:
+            self.get(uid, VedoRequest.ZONE_STAT, True)
+        except CookieException as e:
+            raise CookieException(
+                "Login rejected by the Vedo panel - check the configured password"
+            ) from e
+
+        _LOGGER.debug("Logged in")
+        return uid
 
     # Do the logout. Ignore errors
     def logout(self, uid):
@@ -324,7 +352,8 @@ class SensorUpdater(Thread):
                                 "out_time": out_time[i],
                             }
                             self._vedo.update_area(area)
-            except CookieException:
+            except CookieException as e:
+                _LOGGER.warning("Vedo session invalid, forcing a new login: %s", e)
                 self.logout()
             except Exception as e:
                 _LOGGER.error("Error getting data! %s", e)

@@ -1,27 +1,39 @@
 # Comelit SimpleHome and Comelit Vedo integration for Home Assistant
 
-[![GitHub Release](https://img.shields.io/github/release/gicamm/homeassistant-comelit.svg?style=flat-square)](https://github.com/gicamm/homeassistant-comelit/releases)
-[![GitHub Release](https://img.shields.io/github/commit-activity/y/gicamm/homeassistant-comelit.svg?style=flat-square)](https://github.com/gicamm/homeassistant-comelit/commits)
-[![Test Coverage](https://img.shields.io/codecov/c/gh/gicamm/homeassistant-comelit?style=flat-square)](https://app.codecov.io/gh/gicamm/homeassistant-comelit/)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=gicamm_homeassistant-comelit&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=gicamm_homeassistant-comelit&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=gicamm_homeassistant-comelit&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=gicamm_homeassistant-comelit&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=gicamm_homeassistant-comelit&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-light.svg)](https://sonarcloud.io/summary/new_code?id=gicamm_homeassistant-comelit)
-[![License](https://img.shields.io/github/license/gicamm/homeassistant-comelit.svg?style=flat-square)](LICENSE)
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=gicamm&repository=homeassistant-comelit&category=integration)
+[![CI actions](https://img.shields.io/github/actions/workflow/status/margiov/homeassistant-comelit/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/margiov/homeassistant-comelit/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/tag/margiov/homeassistant-comelit.svg?style=flat-square)](https://github.com/margiov/homeassistant-comelit/releases)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/y/margiov/homeassistant-comelit.svg?style=flat-square)](https://github.com/margiov/homeassistant-comelit/commits)
+[![License](https://img.shields.io/github/license/margiov/homeassistant-comelit.svg?style=flat-square)](LICENSE)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=margiov&repository=homeassistant-comelit&category=integration)
 
 Comelit SimpleHome and Comelit Vedo integration lets you connect your Home Assistant instance to Comelit Simple Home and
 Vedo
 systems.
 
-For more information, see the [Wiki](https://github.com/gicamm/homeassistant-comelit/wiki).
+For more information, see the [Wiki](https://github.com/gicamm/homeassistant-comelit/wiki) of the upstream project (general configuration is the same; see "Fork status" below for what is different here).
+
+### Fork status
+
+This is a maintained fork of [gicamm/homeassistant-comelit](https://github.com/gicamm/homeassistant-comelit), kept as
+an independent HACS repository because the upstream maintainer has not merged the changes below:
+
+- Support for the Comelit Vedo app firmware v1.0.1 / VEDOIPA module (login fix, arm/disarm via POST, area
+  visibility filtering, ARMING/TRIGGERED states) -
+  [upstream PR #132](https://github.com/gicamm/homeassistant-comelit/pull/132), left open but not accepted since it
+  would require the older VEDOIP module to keep working too, which nobody has been able to test against.
+- HVAC cool mode support for the climate entity.
+- More robust Vedo login/session handling (the panel can answer `200 OK` with a cookie even when the login was
+  rejected; this is now detected instead of surfacing as a generic JSON parsing error).
+
+This fork tracks upstream `master` and pulls in new upstream commits regularly; it is synced up to
+[`gicamm/homeassistant-comelit@d863a43`](https://github.com/gicamm/homeassistant-comelit/commit/d863a43adecb4224785c9fc1072dfeefd77c7941)
+(2026-09-15) plus the changes above. The integration logs this same information (version + upstream sync point) once
+at startup.
 
 ### Installation
 
 - Install
-  using [HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=gicamm&repository=homeassistant-comelit&category=integration) (
+  using [HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=margiov&repository=homeassistant-comelit&category=integration) (
   Or copy the contents of `custom_components/comelit/` to `<your config dir>/custom_components/comelit/`.)
 - Add the following to your `<your config dir>/configuration.yaml` file:
 
@@ -159,5 +171,5 @@ python3 -m pip install --upgrade pip   # `--group` needs pip >= 25.1
 python3 -m pip install --group dev     # or --group lint / --group test
 
 ruff check .    # lint
-pytest          # tests + coverage (writes coverage.xml for SonarCloud/Codecov)
+pytest          # tests + coverage (writes coverage.xml)
 ```

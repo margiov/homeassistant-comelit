@@ -1,6 +1,8 @@
 """Comelit SimpleHome/Vedo integration."""
 
+import json
 import logging
+from pathlib import Path
 
 from homeassistant.const import (
     CONF_BINARY_SENSORS,
@@ -14,11 +16,30 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.discovery import load_platform
 import voluptuous as vol
 
-from .const import CONF_CLIENT, CONF_MQTT_PASSWORD, CONF_MQTT_USER, CONF_SERIAL, DOMAIN
+from .const import (
+    CONF_CLIENT,
+    CONF_MQTT_PASSWORD,
+    CONF_MQTT_USER,
+    CONF_SERIAL,
+    DOMAIN,
+    UPSTREAM_REF,
+    UPSTREAM_REF_DATE,
+    UPSTREAM_REPO,
+)
 from .hub import ComelitHub
 from .vedo import ComelitVedo
 
 _LOGGER = logging.getLogger(__name__)
+
+MANIFEST_PATH = Path(__file__).parent / "manifest.json"
+
+
+def _integration_version():
+    try:
+        with MANIFEST_PATH.open(encoding="utf-8") as manifest_file:
+            return json.load(manifest_file).get("version", "unknown")
+    except (OSError, json.JSONDecodeError):
+        return "unknown"
 
 
 HUB_SCHEMA = vol.Schema(
@@ -47,6 +68,14 @@ VEDO_SCHEMA = vol.Schema(
 
 
 def setup(hass, config):
+    _LOGGER.info(
+        "Comelit integration v%s - fork of %s, synced with upstream commit %s (%s)",
+        _integration_version(),
+        UPSTREAM_REPO,
+        UPSTREAM_REF,
+        UPSTREAM_REF_DATE,
+    )
+
     conf = config[DOMAIN]
     hass.data[DOMAIN] = {}
     hass.data[DOMAIN]["conf"] = conf

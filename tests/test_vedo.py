@@ -5,6 +5,7 @@ from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 import pytest
 
 from custom_components.comelit import ComelitVedo
+from custom_components.comelit.exception import CookieException
 from custom_components.comelit.vedo import SensorUpdater, VedoRequest
 
 
@@ -48,6 +49,63 @@ class TestBuildHttp:
     def test_json_path_with_query_appends_cache_buster(self, vedo_instance):
         url, _ = vedo_instance.build_http({}, None, "user/foo.json?bar=1")
         assert url.startswith("http://127.0.0.1:80/user/foo.json?bar=1&_=")
+
+
+class TestParseResponse:
+    def test_valid_payload_is_returned(self, vedo_instance):
+        result = vedo_instance._parse_response(b'{"logged": 1, "status": "0000"}')
+        assert result == {"logged": 1, "status": "0000"}
+
+    def test_payload_without_logged_field_is_returned(self, vedo_instance):
+        result = vedo_instance._parse_response(b'{"status": "0000"}')
+        assert result == {"status": "0000"}
+
+    def test_malformed_json_raises_cookie_exception(self, vedo_instance):
+        # The panel returns broken JSON (e.g. `["Not logged]`) when the
+        # session is invalid instead of a clean error payload.
+        with pytest.raises(CookieException):
+            vedo_instance._parse_response(b'{"ready": ["Not logged]}')
+
+    def test_negative_logged_field_raises_cookie_exception(self, vedo_instance):
+        with pytest.raises(CookieException):
+            vedo_instance._parse_response(b'{"logged": -8, "status": "Not logged"}')
+
+
+class TestLogin:
+    def _mock_post_response(self, vedo_instance, status_code=200, cookie="uid=abc"):
+        response = mock.MagicMock()
+        response.status_code = status_code
+        response.headers = {"set-cookie": cookie} if cookie else {}
+        response.text = ""
+        vedo_instance.post = mock.MagicMock(return_value=response)
+
+    def test_login_succeeds_when_session_is_valid(self, vedo_instance):
+        self._mock_post_response(vedo_instance)
+        vedo_instance.get = mock.MagicMock(return_value={"logged": 1})
+
+        assert vedo_instance.login() == "uid=abc"
+
+    def test_login_raises_when_panel_rejects_credentials(self, vedo_instance):
+        # 200 + a cookie, but the panel never actually authenticated the
+        # session: the credentials/session check must catch this.
+        self._mock_post_response(vedo_instance)
+        vedo_instance.get = mock.MagicMock(
+            side_effect=CookieException("invalid session (logged=-8)")
+        )
+
+        with pytest.raises(CookieException):
+            vedo_instance.login()
+
+    def test_login_returns_none_on_bad_http_status(self, vedo_instance):
+        self._mock_post_response(vedo_instance, status_code=500)
+
+        assert vedo_instance.login() is None
+
+    def test_login_raises_when_no_cookie_is_returned(self, vedo_instance):
+        self._mock_post_response(vedo_instance, cookie=None)
+
+        with pytest.raises(Exception, match="Unable to obtain the cookie"):
+            vedo_instance.login()
 
 
 class TestArmDisarm:

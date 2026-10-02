@@ -15,7 +15,26 @@ jobs:
       - name: "Checkout the repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      - name: "Read the upstream sync point from const.py"
+        id: upstream
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location(
+              "const", "custom_components/comelit/const.py"
+          )
+          const = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(const)
+
+          print(f"repo={const.UPSTREAM_REPO}")
+          print(f"ref={const.UPSTREAM_REF}")
+          print(f"ref_date={const.UPSTREAM_REF_DATE}")
+          PY
+
       - name: "Create the release"
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           generate_release_notes: true
+          body: |
+            Synced with upstream [`${{ steps.upstream.outputs.repo }}`](https://github.com/${{ steps.upstream.outputs.repo }}) up to commit [`${{ steps.upstream.outputs.ref }}`](https://github.com/${{ steps.upstream.outputs.repo }}/commit/${{ steps.upstream.outputs.ref }}) (${{ steps.upstream.outputs.ref_date }}).

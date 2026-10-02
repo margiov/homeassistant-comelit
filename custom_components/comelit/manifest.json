@@ -2,18 +2,18 @@
 	"domain": "comelit",
 	"name": "Comelit SimpleHome/Vedo",
 	"codeowners": [
-		"@gicamm"
+		"@margiov"
 	],
 	"config_flow": false,
 	"dependencies": [],
-	"documentation": "https://github.com/gicamm/homeassistant-comelit/wiki",
+	"documentation": "https://github.com/margiov/homeassistant-comelit#readme",
 	"iot_class": "local_push",
-	"issue_tracker": "https://github.com/gicamm/homeassistant-comelit/issues",
+	"issue_tracker": "https://github.com/margiov/homeassistant-comelit/issues",
 	"quality_scale": "silver",
 	"requirements": [
 		"requests",
 		"paho-mqtt",
 		"wrapt_timeout_decorator"
 	],
-	"version": "1.1.2"
+	"version": "1.2.0"
 }

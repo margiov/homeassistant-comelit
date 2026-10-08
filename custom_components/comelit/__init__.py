@@ -66,6 +66,18 @@ VEDO_SCHEMA = vol.Schema(
     }
 )
 
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Optional("hub"): vol.Any(None, dict),
+                vol.Optional("vedo"): vol.Any(None, dict),
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
 
 def setup(hass, config):
     _LOGGER.info(

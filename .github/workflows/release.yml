@@ -14,6 +14,9 @@ jobs:
     steps:
       - name: "Checkout the repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history and tags, to list the commits since the previous tag.
+          fetch-depth: 0
 
       - name: "Read the upstream sync point from const.py"
         id: upstream
@@ -32,9 +35,26 @@ jobs:
           print(f"ref_date={const.UPSTREAM_REF_DATE}")
           PY
 
+      - name: "List the changes since the previous tag"
+        id: changes
+        run: |
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range="${previous:+${previous}..}${GITHUB_REF_NAME}"
+          {
+            echo "list<<CHANGES_EOF"
+            # Direct pushes have no PR, so GitHub's generated notes skip them:
+            # list the commits (merges excluded) ourselves.
+            git log --no-merges --format='- %s (%h)' "$range"
+            echo "CHANGES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: "Create the release"
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           generate_release_notes: true
           body: |
+            ### Changes
+
+            ${{ steps.changes.outputs.list }}
+
             Synced with upstream [`${{ steps.upstream.outputs.repo }}`](https://github.com/${{ steps.upstream.outputs.repo }}) up to commit [`${{ steps.upstream.outputs.ref }}`](https://github.com/${{ steps.upstream.outputs.repo }}/commit/${{ steps.upstream.outputs.ref }}) (${{ steps.upstream.outputs.ref_date }}).

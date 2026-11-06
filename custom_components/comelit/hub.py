@@ -26,6 +26,11 @@ from .switch import ComelitSwitch
 
 _LOGGER = logging.getLogger(__name__)
 
+# Minimum seconds between two re-logins triggered by rejected requests
+RELOGIN_MIN_INTERVAL = 10
+# Seconds between announce/login retries while we have no session token
+LOGIN_RETRY_INTERVAL = 30
+
 COMELIT_HUB_COMPONENTS = [
     "climate",
     "light",
@@ -48,6 +53,7 @@ class RequestType:
 
 class HubFields:
     TOKEN = "sessiontoken"
+    REQ_RESULT = "req_result"
     TEMPERATURE = "temperatura"
     TARGET_TEMPERATURE = "soglia_attiva"
     HUMIDITY = "umidita"
@@ -268,6 +274,7 @@ class ComelitHub:
         self.sequence_id = 1
         self.agent_id = 10
         self.sessiontoken = ""
+        self._last_announce = float("-inf")
         self.hub_serial = hub_serial
         self.hub_host = hub_host
         self.mqtt_user = mqtt_user
@@ -305,6 +312,13 @@ class ComelitHub:
         try:
             req_type = payload["req_type"]
 
+            # The hub answers a rejected request with a non-zero req_result
+            # and a message instead of the expected data. Handle it here so
+            # an expired session gets renewed instead of failing forever.
+            if payload.get(HubFields.REQ_RESULT, 0) != 0:
+                self.manage_error(payload)
+                return
+
             options = {
                 RequestType.ANNOUNCE: self.manage_announce,
                 RequestType.LOGIN: self.token,
@@ -331,12 +345,55 @@ class ComelitHub:
         }
         self.publish(req)
 
+    def manage_error(self, payload):
+        req_type = payload.get("req_type")
+        message = payload.get("message", "")
+        if req_type == RequestType.LOGIN:
+            # e.g. wrong credentials: keep no token, the status thread will
+            # retry the whole announce/login sequence later.
+            self.sessiontoken = ""
+            _LOGGER.error(
+                "Login to the Comelit hub failed (req_result %s): %s",
+                payload.get(HubFields.REQ_RESULT),
+                message,
+            )
+        elif "token" in message.lower():
+            # The hub dropped our session (e.g. after a hub reboot): log in again.
+            _LOGGER.warning(
+                "Comelit hub rejected the session token (%s), logging in again",
+                message,
+            )
+            self.relogin()
+        else:
+            _LOGGER.warning(
+                "Comelit hub rejected request type %s (req_result %s): %s",
+                req_type,
+                payload.get(HubFields.REQ_RESULT),
+                message,
+            )
+
     def token(self, payload):
-        self.sessiontoken = payload[HubFields.TOKEN]
+        token = payload.get(HubFields.TOKEN)
+        if not token:
+            _LOGGER.error("Comelit hub login reply without a session token")
+            return
+        self.sessiontoken = token
+        _LOGGER.info("Logged in to the Comelit hub")
 
     def announce(self):
+        self._last_announce = time.monotonic()
         req = {"req_type": RequestType.ANNOUNCE, "req_sub_type": -1, "agent_type": 0}
         self.publish(req)
+
+    def relogin(self, force=False):
+        """Drop the session token and restart the announce/login sequence.
+
+        Rate limited, so a burst of rejected requests triggers a single login.
+        """
+        if not force and time.monotonic() - self._last_announce < RELOGIN_MIN_INTERVAL:
+            return
+        self.sessiontoken = ""
+        self.announce()
 
     def parse_parameters(self, payload):
         parameters = payload["params_data"]
@@ -641,6 +698,13 @@ class StatusUpdater(Thread):
         _LOGGER.debug("Comelit Hub status snapshot started")
         while True:
             if self.hub.sessiontoken == "":
+                # Not logged in (yet): the announce sent on connect may have
+                # been lost (e.g. hub still booting) or the login failed.
+                # Retry the sequence periodically instead of waiting forever.
+                if time.monotonic() - self.hub._last_announce >= LOGIN_RETRY_INTERVAL:
+                    _LOGGER.info("Not logged in to the Comelit hub, retrying")
+                    self.hub.relogin(force=True)
+                time.sleep(1)
                 continue
 
             update_status(self.hub)

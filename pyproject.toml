@@ -1,14 +1,24 @@
 # This repository is a Home Assistant custom integration, not a distributable
 # Python package: Home Assistant loads `custom_components/comelit` directly and
 # resolves its runtime dependencies from `custom_components/comelit/manifest.json`.
-# This file therefore carries no build backend and no `[project]` table - it only
-# configures the development tooling (dev dependencies, ruff, pytest, coverage).
+# This file therefore carries no build backend - it only configures the
+# development tooling (dev dependencies, ruff, pytest, coverage). The minimal
+# `[project]` table exists only so uv can resolve the dependency groups into
+# `uv.lock`; `package = false` keeps uv from trying to build/install it.
+[project]
+name = "homeassistant-comelit"
+version = "0.0.0"
+requires-python = ">=3.14.2"
+dependencies = []
+
+[tool.uv]
+package = false
 
 
-# PEP 735 dependency groups (pip >= 25.1):
-#   pip install --group dev    # everything, for local development
-#   pip install --group lint   # just ruff, for the lint CI job
-#   pip install --group test   # test runtime, for the test CI job
+# PEP 735 dependency groups, locked in uv.lock:
+#   uv sync --locked --group dev     # everything, for local development
+#   uv sync --locked --only-group lint   # just ruff, for the lint CI job
+#   uv sync --locked --only-group test   # test runtime, for the test CI job
 [dependency-groups]
 lint = ["ruff"]
 
@@ -17,14 +27,14 @@ test = [
     # runtime requirements are declared in custom_components/comelit/manifest.json.
     # pytest-homeassistant-custom-component pins the matching Home Assistant
     # release, so bump both lines together.
-    "homeassistant==2025.4.4",
+    "homeassistant==2026.6.4",
     "paho-mqtt",
     "wrapt-timeout-decorator",
     "dill",
     "wrapt",
     "module-wrapper",
     "multiprocess",
-    "pytest-homeassistant-custom-component==0.13.236",
+    "pytest-homeassistant-custom-component==0.13.340",
     "pytest-asyncio",
     "pytest-cov",
 ]
@@ -35,7 +45,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 88
 extend-exclude = [
     "debug",
@@ -87,6 +97,9 @@ force-sort-within-sections = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pytest-homeassistant-custom-component ships async autouse fixtures, which
+# pytest-asyncio only resolves for every test in auto mode.
+asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
     "--cov",

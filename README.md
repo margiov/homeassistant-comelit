@@ -24,10 +24,12 @@ an independent HACS repository because the upstream maintainer has not merged th
 - HVAC cool mode support for the climate entity.
 - More robust Vedo login/session handling (the panel can answer `200 OK` with a cookie even when the login was
   rejected; this is now detected instead of surfacing as a generic JSON parsing error).
+- Hub session recovery: when the Comelit Hub drops the session (e.g. after a hub reboot) and answers
+  `invalid token`, the integration logs in again by itself instead of staying stuck until Home Assistant restarts.
 
 This fork tracks upstream `master` and pulls in new upstream commits regularly; it is synced up to
-[`gicamm/homeassistant-comelit@d863a43`](https://github.com/gicamm/homeassistant-comelit/commit/d863a43adecb4224785c9fc1072dfeefd77c7941)
-(2026-09-15) plus the changes above. The integration logs this same information (version + upstream sync point) once
+[`gicamm/homeassistant-comelit@34d070a`](https://github.com/gicamm/homeassistant-comelit/commit/34d070ab0f350c882403082672baeb2193af0567)
+(2026-11-03) plus the changes above. The integration logs this same information (version + upstream sync point) once
 at startup.
 
 ### Installation
@@ -160,16 +162,14 @@ dependency; the integration's runtime requirements live in
 
 This repository is **not** a pip-installable package: `pip install .` will not
 work and is not meant to. Install the development dependency groups instead.
-
-Home Assistant 2025.4.x needs Python 3.13 (its dependencies have no wheels for
-3.14 yet), so pin the interpreter when creating the virtualenv:
+They are locked in `uv.lock`, so use [uv](https://docs.astral.sh/uv/):
 
 ```bash
-python3.13 -m venv venv                # or: uv venv --python 3.13 venv
-source venv/bin/activate
-python3 -m pip install --upgrade pip   # `--group` needs pip >= 25.1
-python3 -m pip install --group dev     # or --group lint / --group test
+uv sync --locked --group dev    # or --only-group lint / --only-group test
 
-ruff check .    # lint
-pytest          # tests + coverage (writes coverage.xml)
+uv run ruff check .    # lint
+uv run pytest          # tests + coverage (writes coverage.xml)
 ```
+
+After changing a dependency group in `pyproject.toml`, run `uv lock` and commit
+the updated `uv.lock`.

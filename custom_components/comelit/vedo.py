@@ -12,7 +12,11 @@ from wrapt_timeout_decorator import timeout
 
 from custom_components.comelit.alarm_control_panel import VedoAlarm
 from custom_components.comelit.binary_sensor import VedoSensor
-from custom_components.comelit.exception import CookieException
+from custom_components.comelit.exception import (
+    CookieException,
+    VedoDataException,
+    VedoLoginException,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,12 +70,14 @@ class ComelitVedo:
             headers["Cookie"] = uid
 
         millis = int(round(time.time() * 1000))
+        # The Vedo central only serves plain HTTP on the local network.
+        base_url = f"http://{self.host}:{self.port}"  # NOSONAR
         if ".cgi" in path:
-            url = f"http://{self.host}:{self.port}/{path}"
-        elif "?" in path:
-            url = f"http://{self.host}:{self.port}/{path}&_={millis}"
+            # CGI endpoints (login/action) take no cache-busting parameter
+            url = f"{base_url}/{path}"
         else:
-            url = f"http://{self.host}:{self.port}/{path}?_={millis}"
+            separator = "&" if "?" in path else "?"
+            url = f"{base_url}/{path}{separator}_={millis}"
         return url, headers
 
     # Do the GET from the vedo IP
@@ -125,7 +131,7 @@ class ComelitVedo:
         uid = response.headers.get("set-cookie")
         if uid is None:
             _LOGGER.warning("Error doing the login %s", response.text)
-            raise Exception("Unable to obtain the cookie")
+            raise VedoLoginException("Unable to obtain the cookie")
 
         # The panel always replies 200 with a cookie, even when the password
         # is wrong: the only reliable sign of a rejected login shows up in
@@ -286,77 +292,77 @@ class SensorUpdater(Thread):
                     self._uid = self._vedo.login()
                     if self._uid is None:
                         continue
-
-                zone_desc = self._vedo.get(self._uid, VedoRequest.ZONE_DESC, True)
-                zone_status = self._vedo.get(self._uid, VedoRequest.ZONE_STAT, True)
-                areas_desc = self._vedo.get(self._uid, VedoRequest.AREA_DESC, True)
-                areas_stat = self._vedo.get(self._uid, VedoRequest.AREA_STAT, True)
-
-                description = zone_desc["description"]
-                zone_statuses = zone_status["status"].split(",")
-                in_area = zone_desc["in_area"]
-                descs = areas_desc["description"]
-                ready = areas_stat["ready"]
-                present = areas_desc["present"]
-
-                sensors = []
-
-                if len(in_area) != len(zone_statuses) or len(descs) != len(ready):
-                    raise Exception("error getting area")
-
-                for i in range(len(in_area)):
-                    value = in_area[i]
-                    if value == "Not logged":
-                        raise CookieException("cookie expired")
-
-                    if value != 0:
-                        sensor_dict = {
-                            "index": i,
-                            "id": i,
-                            "name": description[i],
-                            "status": zone_statuses[i],
-                        }
-                        _LOGGER.debug(f"Updating the zone {sensor_dict}")
-                        sensors.append(sensor_dict)
-
-                if self._uid is not None:
-                    if self._vedo.expose_bin_sensors:
-                        for sensor in sensors:
-                            self._vedo.update_sensor(sensor)
-
-                    p1_pres = areas_desc["p1_pres"]
-                    p2_pres = areas_desc["p2_pres"]
-
-                    armed = areas_stat["armed"]
-                    alarm = areas_stat["alarm"]
-                    alarm_memory = areas_stat["alarm_memory"]
-                    sabotage = areas_stat["sabotage"]
-                    anomaly = areas_stat["anomaly"]
-                    in_time = areas_stat["in_time"]
-                    out_time = areas_stat["out_time"]
-
-                    for i in range(len(descs)):
-                        if present[i] == 1:
-                            area = {
-                                "name": descs[i],
-                                "id": i,
-                                "p1_pres": p1_pres[i],
-                                "p2_pres": p2_pres[i],
-                                "ready": ready[i],
-                                "armed": armed[i],
-                                "alarm": alarm[i],
-                                "alarm_memory": alarm_memory[i],
-                                "sabotage": sabotage[i],
-                                "anomaly": anomaly[i],
-                                "in_time": in_time[i],
-                                "out_time": out_time[i],
-                            }
-                            self._vedo.update_area(area)
+                self.poll()
             except CookieException as e:
                 _LOGGER.warning("Vedo session invalid, forcing a new login: %s", e)
                 self.logout()
             except Exception as e:
-                _LOGGER.error("Error getting data! %s", e)
+                _LOGGER.exception("Error getting data! %s", e)
                 self.logout()
             finally:
                 time.sleep(self._scan_interval)
+
+    # Fetch the zones and the areas and update the entities
+    def poll(self):
+        zone_desc = self._vedo.get(self._uid, VedoRequest.ZONE_DESC, True)
+        zone_status = self._vedo.get(self._uid, VedoRequest.ZONE_STAT, True)
+        areas_desc = self._vedo.get(self._uid, VedoRequest.AREA_DESC, True)
+        areas_stat = self._vedo.get(self._uid, VedoRequest.AREA_STAT, True)
+
+        zone_statuses = zone_status["status"].split(",")
+        if len(zone_desc["in_area"]) != len(zone_statuses) or len(
+            areas_desc["description"]
+        ) != len(areas_stat["ready"]):
+            raise VedoDataException("error getting area")
+
+        sensors = self.parse_zones(zone_desc, zone_statuses)
+
+        if self._vedo.expose_bin_sensors:
+            for sensor in sensors:
+                self._vedo.update_sensor(sensor)
+
+        for area in self.parse_areas(areas_desc, areas_stat):
+            self._vedo.update_area(area)
+
+    # Build the sensors of the zones assigned to an area
+    @staticmethod
+    def parse_zones(zone_desc, zone_statuses):
+        sensors = []
+        for i, value in enumerate(zone_desc["in_area"]):
+            if value == "Not logged":
+                raise CookieException("cookie expired")
+
+            if value != 0:
+                sensor_dict = {
+                    "index": i,
+                    "id": i,
+                    "name": zone_desc["description"][i],
+                    "status": zone_statuses[i],
+                }
+                _LOGGER.debug(f"Updating the zone {sensor_dict}")
+                sensors.append(sensor_dict)
+        return sensors
+
+    # Build the alarm areas
+    @staticmethod
+    def parse_areas(areas_desc, areas_stat):
+        desc_fields = ("p1_pres", "p2_pres")
+        stat_fields = (
+            "ready",
+            "armed",
+            "alarm",
+            "alarm_memory",
+            "sabotage",
+            "anomaly",
+            "in_time",
+            "out_time",
+        )
+        areas = []
+        for i, name in enumerate(areas_desc["description"]):
+            if areas_desc["present"][i] != 1:
+                continue
+            area = {"name": name, "id": i}
+            area.update({field: areas_desc[field][i] for field in desc_fields})
+            area.update({field: areas_stat[field][i] for field in stat_fields})
+            areas.append(area)
+        return areas

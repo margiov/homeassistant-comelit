@@ -38,7 +38,11 @@ def _integration_version():
     try:
         with MANIFEST_PATH.open(encoding="utf-8") as manifest_file:
             return json.load(manifest_file).get("version", "unknown")
-    except (OSError, json.JSONDecodeError):
+    # Two clauses instead of a tuple: ruff (py314) would rewrite the tuple into
+    # the unparenthesized form, which older Python versions cannot parse.
+    except OSError:
+        return "unknown"
+    except json.JSONDecodeError:
         return "unknown"
 
 
@@ -118,12 +122,14 @@ def setup(hass, config):
                 scan_interval,
             )
             hass.data[DOMAIN]["hub"] = hub
+            hub.hass = hass
             load_platform(hass, "sensor", DOMAIN, {}, config)
             load_platform(hass, "light", DOMAIN, {}, config)
             load_platform(hass, "cover", DOMAIN, {}, config)
             load_platform(hass, "scene", DOMAIN, {}, config)
             load_platform(hass, "switch", DOMAIN, {}, config)
             load_platform(hass, "climate", DOMAIN, {}, config)
+            load_platform(hass, "select", DOMAIN, {}, config)
             hub.start()
             _LOGGER.info("Comelit SimpleHome integration started")
 
